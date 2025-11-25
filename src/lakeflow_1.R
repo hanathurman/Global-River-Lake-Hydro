@@ -143,7 +143,7 @@ get_api_key <- function(prefix) {
   }
 
 pull_lake_data <- function(feature_id, api_key){
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f,xtrk_dist,quality_f,partial_f')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -177,7 +177,7 @@ batch_download_SWOT_lakes <- function(obs_ids, api_key){
 pull_data <- function(feature_id, api_key){
   # print("pulling data")
   # Function to pull swot reach data using hydrocron
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b,p_low_slp,p_length,xtrk_dist,obs_frac_n,p_n_nodes')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -243,9 +243,20 @@ filter_function = function(swot_ts){
   # Allowing partial obs to see if it degrades performances. 
   #dawg_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data'&swot_ts$ice_clim_f<2&swot_ts$dark_frac<=0.5&swot_ts$xovr_cal_q<2&!is.na(swot_ts$slope2)&!is.infinite(swot_ts$slope2)&swot_ts$slope2>0&swot_ts$width>0,])
   dawg_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data'&swot_ts$ice_clim_f<2&swot_ts$dark_frac<=0.5&swot_ts$xovr_cal_q<2&swot_ts$partial_f==0&!is.na(swot_ts$slope2)&!is.infinite(swot_ts$slope2)&swot_ts$slope2>0&swot_ts$width>0,])
+  perm_relax_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data' & 
+                                           swot_ts$p_width >= 60 & 
+                                           swot_ts$p_low_slp <= 0 & 
+                                           swot_ts$p_length >= 5000 & 
+                                           ((swot_ts$xtrk_dist >= 10000 & swot_ts$xtrk_dist <= 60000) | (swot_ts$xtrk_dist >= -60000 & swot_ts$xtrk_dist <= -10000)) & 
+                                           swot_ts$ice_clim_f <= 1 & 
+                                           swot_ts$reach_q <=2 & 
+                                           swot_ts$dark_frac <= 0.6 & 
+                                           swot_ts$obs_frac_n > 0.4 & 
+                                           swot_ts$xovr_cal_q <= 1 & 
+                                           swot_ts$p_n_nodes >= 10,])
   qual_filter = swot_ts[swot_ts$time_str!='no_data'&swot_ts$reach_q<=2,]
   ssf_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data'&swot_ts$reach_q_b<=32768&swot_ts$dark_frac<=0.1&swot_ts$wse_r_u<=0.5&swot_ts$slope_r_u<=10e-5&swot_ts$ice_clim_f==0&swot_ts$xovr_cal_q<=1,])
-  return(dawg_filter)
+  return(perm_relax_filter)
 }
 
 # Ryan's updated code to get data from farther up/downstream reaches
@@ -532,7 +543,15 @@ combined = rbindlist(files_filt[!is.na(files_filt)])
 # Filter lake data
 ################################################################################
 # Testing to see if partial flags make a difference since we're only using wse for lakes at the moment. - partial wse seems great. 
-lakeData = combined[combined$ice_clim_f<2&combined$dark_frac<=0.5&combined$xovr_cal_q<2&combined$time_str!='no_data'&combined$wse>(5000*-1),]
+#lakeData = combined[combined$ice_clim_f<2&combined$dark_frac<=0.5&combined$xovr_cal_q<2&combined$time_str!='no_data'&combined$wse>(5000*-1),]
+lakeData = combined[combined$ice_clim_f <= 1 &
+                      combined$dark_frac <= 0.6 &
+                      combined$xovr_cal_q <= 1 &
+                      combined$quality_f <= 2 &
+                      combined$partial_f <= 0 &
+                      ((combined$xtrk_dist >= 10000 & combined$xtrk_dist <= 60000) | (combined$xtrk_dist >= -60000 & combined$xtrk_dist <= -10000)) &
+                      combined$time_str!='no_data' &
+                      combined$wse>(5000*-1),]
 lakeData = lakeData%>%distinct(.keep_all=TRUE)
 lakeData$lake_id = as.character(lakeData$lake_id)
 
