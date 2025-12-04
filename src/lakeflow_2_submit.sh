@@ -20,4 +20,4 @@ apptainer exec \
     --pwd /projects/swot/hana/LakeFlow_Confluence \
     --bind /projects/swot/hana/LakeFlow_Confluence \
     --cleanenv \
-    /projects/swot/hana/LakeFlow_Confluence/lakeflow_deploy.sif Rscript src/lakeflow_2.R -c "in/viable/lakeflow${SLURM_ARRAY_TASK_ID}.csv" -s in/sos/constrained/ -w 6 -i in/ -o out/lf_results_global_run_2/
+    /projects/swot/hana/LakeFlow_Confluence/lakeflow_deploy.sif Rscript src/lakeflow_2.R -c "in/viable/lakeflow${SLURM_ARRAY_TASK_ID}.csv" -s in/sos/constrained/ -w 6 -i in/ -o out/lf_results_global_run_3/
