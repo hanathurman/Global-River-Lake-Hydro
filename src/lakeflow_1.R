@@ -143,7 +143,7 @@ get_api_key <- function(prefix) {
   }
 
 pull_lake_data <- function(feature_id, api_key){
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f,xtrk_dist,quality_f,partial_f')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f,xtrk_dist,quality_f,partial_f')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -177,7 +177,7 @@ batch_download_SWOT_lakes <- function(obs_ids, api_key){
 pull_data <- function(feature_id, api_key){
   # print("pulling data")
   # Function to pull swot reach data using hydrocron
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2025-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b,p_low_slp,p_length,xtrk_dist,obs_frac_n,p_n_nodes')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b,p_low_slp,p_length,xtrk_dist,obs_frac_n,p_n_nodes')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -210,15 +210,15 @@ batch_download_SWOT <- function(obs_ids, api_key){
 tukey_test = function(ts){
   # print("running tukey")
   # Turkey test for removing outliers
-  wseIQR = quantile(ts$wse, c(.25, .75))
+  wseIQR = quantile(ts$wse, c(.25, .75), na.rm = TRUE)
   wseT_l = wseIQR[1] - (diff(wseIQR)*1.5)
   wseT_u = wseIQR[2] + (diff(wseIQR)*1.5)
   
-  slopeIQR = quantile(ts$slope2, c(.25, .75))
+  slopeIQR = quantile(ts$slope2, c(.25, .75), na.rm = TRUE)
   slopeT_l = slopeIQR[1] - (diff(slopeIQR)*1.5)
   slopeT_u = slopeIQR[2] + (diff(slopeIQR)*1.5)
   
-  widthIQR = quantile(ts$width, c(.25, .75))
+  widthIQR = quantile(ts$width, c(.25, .75), na.rm = TRUE)
   widthT_l = widthIQR[1] - (diff(widthIQR)*1.5)
   widthT_u = widthIQR[2] + (diff(widthIQR)*1.5)
   
@@ -229,7 +229,7 @@ tukey_test = function(ts){
 tukey_test_lake = function(ts){
   # print("running tukey lake")
   # Turkey test for removing outliers 
-  wseIQR = quantile(ts$wse, c(.25, .75))
+  wseIQR = quantile(ts$wse, c(.25, .75), na.rm = TRUE)
   wseT_l = wseIQR[1] - (diff(wseIQR)*1.5)
   wseT_u = wseIQR[2] + (diff(wseIQR)*1.5)
   
@@ -286,25 +286,47 @@ combining_lk_rv_obs = function(lake, api_key){
     sword_nc = nc_open(file.path(indir, "sword", continent))
     sword = list(reach_id=ncvar_get(sword_nc, "reaches/reach_id"),
                  rch_id_dn=ncvar_get(sword_nc, "reaches/rch_id_dn"),
-                 n_rch_dn=ncvar_get(sword_nc, "reaches/n_rch_down")
+                 n_rch_dn=ncvar_get(sword_nc, "reaches/n_rch_down"),
+                 facc=ncvar_get(sword_nc, "reaches/facc"),
+                 swot_orbits=ncvar_get(sword_nc, "reaches/swot_orbits")
     )
     nc_close(sword_nc)
 
-    n_alt_ds_reaches = sword$n_rch_dn[sword$reach_id==f]
-
-    if(n_alt_ds_reaches==1){
-      alt_ds_reach = sword$rch_id_dn[sword$reach_id==f]
-      dn_river_pull = try(lapply(alt_ds_reach, pull_data, api_key = api_key))
-      dn_river_filt = lapply(dn_river_pull[!is.na(dn_river_pull)], filter_function)
-      dnObs_alt = rbindlist(dn_river_filt)
-      dnObs_alt$time=as_datetime(dnObs_alt$time_str)
-      dnObs_alt$reach_id_original = dnObs_alt$reach_id
-      dnObs_alt$reach_id = f
-      dnObs_alt$shifted = 'yes'
-      if(nrow(dnObs_alt)>0){
-        return(dnObs_alt)
+    reach = f
+    
+    #How many reaches can we shift downstream?
+    max_shift_ds_reaches = 5
+    
+    #Shift downstream and pull data
+    for (i in 1:max_shift_ds_reaches) {
+      n_alt_ds_reaches = sword$n_rch_dn[sword$reach_id==reach]
+      if(n_alt_ds_reaches==1){    #Do not shift downstream if there is a river junction
+        alt_ds_reach = sword$rch_id_dn[sword$reach_id==reach][1]
+        if (!(alt_ds_reach %in% sword$reach_id)) {  #make sure there's actually a ds reach
+          next   # or break
+        }
+        facc_orig = sword$facc[sword$reach_id==reach] #Get drainage area for orig reach
+        facc_alt = sword$facc[sword$reach_id==alt_ds_reach] #Get drainage area for alt reach
+        orbits_orig = sword$swot_orbits[sword$reach_id==reach] #Get orbits for orig reach
+        orbits_alt = sword$swot_orbits[sword$reach_id==alt_ds_reach] #Get orbits for alt reach
+        
+        #Adjacent reach must have similar contributing drainage area AND identical orbits
+        if(((((facc_alt - facc_orig)/facc_orig)*100) < 10) & (all(orbits_orig == orbits_alt))) {
+          dn_river_pull = try(lapply(alt_ds_reach, pull_data, api_key = api_key))
+          dn_river_filt = lapply(dn_river_pull[!is.na(dn_river_pull)], filter_function)
+          dnObs_alt = rbindlist(dn_river_filt)
+          dnObs_alt$time=as_datetime(dnObs_alt$time_str)
+          dnObs_alt$reach_id_original = dnObs_alt$reach_id
+          dnObs_alt$reach_id = f
+          dnObs_alt$shifted = 'yes'
+          if(nrow(dnObs_alt)>0){
+            return(dnObs_alt)
+          } else{
+            reach = alt_ds_reach
+          }
+        }
       }
-    }
+    } 
   }
 
   additional_ds_obs = rbindlist(lapply(missing_dn, shift_a_reach_away, api_key = api_key))
@@ -319,37 +341,60 @@ combining_lk_rv_obs = function(lake, api_key){
   dn_shifted = any(dnObs_all$shifted=='yes')
 
   #Allow upstream reaches to shift one reach upstream.
-  n_us_reaches = updated_pld$D_reach_n[updated_pld$lake_id==lake]
+  n_us_reaches = updated_pld$U_reach_n[updated_pld$lake_id==lake]
   n_us_reaches_obs = upObs_all[,.N,by=reach_id]
   missing_up = upID[upID%!in%n_us_reaches_obs$reach_id]
   shift_a_reach_up = function(f, api_key){
-    print("Shift a reach up")
-
+    print("Shift a reach up...")
+    
     reach_id = as.character(f)
     reach_continent = strtoi(substring(reach_id, 1, 1))
     continent = paste0(sword_continents[reach_continent], "_sword_v", SWORD_VERSION, ".nc")
-
+    
     sword_nc = nc_open(file.path(indir, "sword", continent))
     sword = list(reach_id=ncvar_get(sword_nc, "reaches/reach_id"),
                  rch_id_up=ncvar_get(sword_nc, "reaches/rch_id_up"),
-                 n_rch_up=ncvar_get(sword_nc, "reaches/n_rch_up")
-                 )
+                 n_rch_up=ncvar_get(sword_nc, "reaches/n_rch_up"),
+                 facc=ncvar_get(sword_nc, "reaches/facc"),
+                 swot_orbits=ncvar_get(sword_nc, "reaches/swot_orbits")
+    )
     nc_close(sword_nc)
-
-    n_alt_us_reaches = sword$n_rch_up[sword$reach_id==f]
-    if(n_alt_us_reaches==1){
-      alt_us_reach = sword$rch_id_up[sword$reach_id==f]
-      up_river_pull = try(lapply(alt_us_reach, pull_data, api_key = api_key))
-      up_river_filt = lapply(up_river_pull[!is.na(up_river_pull)], filter_function)
-      upObs_alt = rbindlist(up_river_filt)
-      upObs_alt$time=as_datetime(upObs_alt$time_str)
-      upObs_alt$reach_id_original = upObs_alt$reach_id
-      upObs_alt$reach_id = f
-      upObs_alt$shifted = 'yes'
-      if(nrow(upObs_alt)>0){
-        return(upObs_alt)
+    
+    reach = f
+    
+    #How many reaches can we shift upstream?
+    max_shift_us_reaches = 5
+    
+    #Shift upstream and pull data
+    for (i in 1:max_shift_us_reaches) {
+      n_alt_us_reaches = sword$n_rch_up[sword$reach_id==reach]
+      if(n_alt_us_reaches==1){    #Do not shift upstream if there is a river junction
+        alt_us_reach = sword$rch_id_up[sword$reach_id==reach][1]
+        if (!(alt_us_reach %in% sword$reach_id)) {  #make sure there's actually an us reach
+          next   # or break
+        }
+        facc_orig = sword$facc[sword$reach_id==reach] #Get drainage area for orig reach
+        facc_alt = sword$facc[sword$reach_id==alt_us_reach] #Get drainage area for alt reach
+        orbits_orig = sword$swot_orbits[sword$reach_id==reach] #Get orbits for orig reach
+        orbits_alt = sword$swot_orbits[sword$reach_id==alt_us_reach] #Get orbits for alt reach
+        
+        #Adjacent reach must have similar contributing drainage area AND identical orbits
+        if(((((facc_alt - facc_orig)/facc_orig)*100) < 10) & (all(orbits_orig == orbits_alt))) {
+          up_river_pull = try(lapply(alt_us_reach, pull_data, api_key = api_key))
+          up_river_filt = lapply(up_river_pull[!is.na(up_river_pull)], filter_function)
+          upObs_alt = rbindlist(up_river_filt)
+          upObs_alt$time=as_datetime(upObs_alt$time_str)
+          upObs_alt$reach_id_original = upObs_alt$reach_id
+          upObs_alt$reach_id = f
+          upObs_alt$shifted = 'yes'
+          if(nrow(upObs_alt)>0){
+            return(upObs_alt)
+          } else{
+            reach = alt_us_reach
+          }
+        }
       }
-    }
+    } 
   }
 
   additional_us_obs = rbindlist(lapply(missing_up, shift_a_reach_up, api_key = api_key))
