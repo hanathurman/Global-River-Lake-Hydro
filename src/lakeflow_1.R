@@ -83,8 +83,8 @@ updated_pld$lake_id =  as.character(updated_pld$lake_id)
 updated_pld$continent = substr(updated_pld$lake_id, 1,1)
 
 # Load ET dataset
-et = fread(file.path(indir, '/ancillary/et.csv'))
-et$lake_id <- as.character(et$lake_id)
+#et = fread(file.path(indir, '/ancillary/et.csv'))
+#et$lake_id <- as.character(et$lake_id)
 
 # Load tributary dataset
 tributary = fread(file.path(indir,'/ancillary/tributaries.csv'))
@@ -503,16 +503,26 @@ extract_data_by_lake <- function(lake, indir){
     upObs = relevant_data[[2]]
     dnObs = relevant_data[[3]]
 
-    # Extract month - used to assign et  
-    lakeObs$month = month(lakeObs$date)
-
-    # Add the ET data 
-    et_lake = et[et$lake_id==lake,]
-    if(nrow(et_lake)==0){
-        lakeObs$et = 0
+    # Load dynamic ET data
+    if (file.exists(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))) {
+      et = fread(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))
+      et$lake_id = lake
+      et$lake_id = as.character(et$lake_id)
+      
+      # Convert evaporation rate of mm/d to m^3/s
+      lake_area_m2 = lakeObs$area_total[1] * 1e6 # convert from km2 to m2
+      et[, m3_s := ((E_mm_d_HS * 0.001) * lake_area_m2) / 86400]
+      
+    } else {
+      # Create an empty table if the lake does not have dynamic ET data
+      et = data.table()
+    }
+    
+    # Add the ET data to other lake data 
+    if(nrow(et)==0){
+      lakeObs$et = 0
     }else{
-      et_lake$month = as.numeric(et_lake$month)
-      lakeObs$et = et_lake$mean[match(lakeObs$month, et_lake$month)]
+      lakeObs$et = et$m3_s[match(lakeObs$date, et$date)]
     }
 
     # add in tributary data:Either use geoglow (ts==TRUE or use GRADES-hydroDL mean monthly vals)
@@ -653,5 +663,5 @@ for(i in 1:nrow(viable_locations)){
 dir.create(file.path(indir, "viable"), showWarnings = FALSE)
 numbers <- gregexpr("[0-9]+", basename(opts$input_file))
 result <- unlist(regmatches(basename(opts$input_file), numbers))
-fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations", index, ".csv")))
+fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations_test2_", index, ".csv")))
 print('Found viable lakes...')
