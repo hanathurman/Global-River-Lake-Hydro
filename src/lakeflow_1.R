@@ -37,7 +37,7 @@ use_python("/usr/local/bin/python3.12")
 ################################################################################
 # Constants
 
-SWORD_VERSION = "16"
+SWORD_VERSION = "17"
 
 ################################################################################
 # Set args
@@ -78,20 +78,20 @@ cat("SLURM_ARRAY_TASK_ID inside R:", Sys.getenv("SLURM_ARRAY_TASK_ID"), "\n")
 ################################################################################
 
 # Load PLD dataset
-updated_pld = fread(file.path(indir,"/SWORDv16_PLDv103_wo_ghost_rch.csv"))
+updated_pld = fread(file.path(indir,"/SWORDv17b_PLDv201.csv"))
 updated_pld$lake_id =  as.character(updated_pld$lake_id)
 updated_pld$continent = substr(updated_pld$lake_id, 1,1)
 
-# Load ET dataset
-#et = fread(file.path(indir, '/ancillary/et.csv'))
-#et$lake_id <- as.character(et$lake_id)
+# Load supplementary ET dataset
+et_supplement = fread(file.path(indir, '/ancillary/et_supplement.csv'))
+et_supplement$lake_id <- as.character(et_supplement$lake_id)
 
 # Load tributary dataset
-tributary = fread(file.path(indir,'/ancillary/tributaries.csv'))
+tributary = fread(file.path(indir,'/ancillary/tributaries_w_ghost_reach.csv'))
 tributary$lake_id <- as.character(tributary$lake_id)
 
 # Load geoglows dataset
-sword_geoglows = fread(file.path(indir,'/ancillary/sword_geoglows.csv'))
+sword_geoglows = fread(file.path(indir,'/ancillary/sword_geoglows_w_ghost_reach.csv'))
 sword_geoglows$reach_id = as.character(sword_geoglows$reach_id)
 
 # Create a folder to store the downloaded/processed datasets
@@ -143,7 +143,7 @@ get_api_key <- function(prefix) {
   }
 
 pull_lake_data <- function(feature_id, api_key){
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f,xtrk_dist,quality_f,partial_f')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?collection_name=SWOT_L2_HR_LakeSP_D&feature=PriorLake&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=lake_id,time_str,wse,area_total,xovr_cal_q,partial_f,dark_frac,ice_clim_f,xtrk_dist,quality_f,partial_f')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -177,7 +177,7 @@ batch_download_SWOT_lakes <- function(obs_ids, api_key){
 pull_data <- function(feature_id, api_key){
   # print("pulling data")
   # Function to pull swot reach data using hydrocron
-  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b,p_low_slp,p_length,xtrk_dist,obs_frac_n,p_n_nodes')
+  website = paste0('https://soto.podaac.earthdatacloud.nasa.gov/hydrocron/v1/timeseries?collection_name=SWOT_L2_HR_RiverSP_D&feature=Reach&feature_id=',feature_id, '&start_time=2023-01-01T00:00:00Z&end_time=2027-12-31T00:00:00Z&output=csv&fields=reach_id,time_str,wse,width,slope,slope2,d_x_area,area_total,reach_q,p_width,xovr_cal_q,partial_f,dark_frac,ice_clim_f,wse_r_u,slope_r_u,reach_q_b,p_low_slp,p_length,xtrk_dist,obs_frac_n,p_n_nodes')
   if (nzchar(api_key)) {
     # do something
     response = GET(website, add_headers("x-hydrocon-key" = api_key))
@@ -243,13 +243,18 @@ filter_function = function(swot_ts){
   # Allowing partial obs to see if it degrades performances. 
   #dawg_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data'&swot_ts$ice_clim_f<2&swot_ts$dark_frac<=0.5&swot_ts$xovr_cal_q<2&!is.na(swot_ts$slope2)&!is.infinite(swot_ts$slope2)&swot_ts$slope2>0&swot_ts$width>0,])
   dawg_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data'&swot_ts$ice_clim_f<2&swot_ts$dark_frac<=0.5&swot_ts$xovr_cal_q<2&swot_ts$partial_f==0&!is.na(swot_ts$slope2)&!is.infinite(swot_ts$slope2)&swot_ts$slope2>0&swot_ts$width>0,])
-  perm_relax_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data' & 
-                                           swot_ts$p_width >= 60 & 
+  perm_relax_filter = tukey_test(swot_ts[swot_ts$time_str!='no_data' & #original lakeflow filters
+                                           swot_ts$partial_f == 0 &
+                                           !is.na(swot_ts$slope2) &
+                                           !is.infinite(swot_ts$slope2) &
+                                           swot_ts$slope2 > 0 &
+                                           swot_ts$width > 0 &
+                                           swot_ts$p_width >= 60 & #permanent relaxed filters
                                            swot_ts$p_low_slp <= 0 & 
                                            swot_ts$p_length >= 5000 & 
                                            ((swot_ts$xtrk_dist >= 10000 & swot_ts$xtrk_dist <= 60000) | (swot_ts$xtrk_dist >= -60000 & swot_ts$xtrk_dist <= -10000)) & 
                                            swot_ts$ice_clim_f <= 1 & 
-                                           swot_ts$reach_q <=2 & 
+                                           swot_ts$reach_q <= 2 & 
                                            swot_ts$dark_frac <= 0.6 & 
                                            swot_ts$obs_frac_n > 0.4 & 
                                            swot_ts$xovr_cal_q <= 1 & 
@@ -440,6 +445,10 @@ combining_lk_rv_obs = function(lake, api_key){
   upObs = data.table(upObs_all)[,c('wse', 'width', 'slope', 'slope2','reach_id', 'date')][,lapply(.SD, mean), by=list(date, reach_id)]
   dnObs = data.table(dnObs_all)[,c('wse', 'width', 'slope', 'slope2','reach_id', 'date')][,lapply(.SD, mean), by=list(date, reach_id)]
 
+  # Reinforce filters after aggregation
+  upObs = upObs[!is.na(slope2) & !is.infinite(slope2) & slope2 > 0 & slope2 != 0 & width > 0]
+  dnObs = dnObs[!is.na(slope2) & !is.infinite(slope2) & slope2 > 0 & slope2 != 0 & width > 0]
+  
   lkDates = unique(lakeObs$date)
   upDts = upObs[,.N,by=date][N>=length(upID)] # limit to dates with obs for each upstream reach.
   dnDts = dnObs[,.N,by=date][N>=length(dnID)] # limit to dates with obs for each downstream reach. 
@@ -455,8 +464,8 @@ combining_lk_rv_obs = function(lake, api_key){
   upObs = upObsGood[order(upObsGood$date),]
   dnObs = dnObsGood[order(dnObsGood$date),]
 
-  upObs = upObs[order(upObs$reach_id),]
-  dnObs = dnObs[order(dnObs$reach_id),]
+  upObs = upObs[order(reach_id, date)] #recent update
+  dnObs = dnObs[order(reach_id, date)]
 
   upObs$shifted = up_shifted
   dnObs$shifted = dn_shifted
@@ -503,15 +512,28 @@ extract_data_by_lake <- function(lake, indir){
     upObs = relevant_data[[2]]
     dnObs = relevant_data[[3]]
 
+    # Extract month and day from observation dates - used to assign et
+    lakeObs$month = month(lakeObs$date)
+    lakeObs$day = day(lakeObs$date)
+    
+    # Find lake depth (heat storage consideration)
+    lake_depth <- et_supplement$Depth_avg[et_supplement$lake_id == lake][1]
+    
     # Load dynamic ET data
     if (file.exists(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))) {
       et = fread(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))
       et$lake_id = lake
       et$lake_id = as.character(et$lake_id)
       
-      # Convert evaporation rate of mm/d to m^3/s
+      # Get lake area for conversion
       lake_area_m2 = lakeObs$area_total[1] * 1e6 # convert from km2 to m2
-      et[, m3_s := ((E_mm_d_HS * 0.001) * lake_area_m2) / 86400]
+      
+      # Convert evaporation rate of mm/d to m^3/s (depending on lake depth)
+      if (is.na(lake_depth)|| lake_depth >= 5){
+        et[, m3_s := ((E_mm_d_HS * 0.001) * lake_area_m2) / 86400]
+      } else if (lake_depth < 5){
+        et[, m3_s := ((E_mm_d_noHS * 0.001) * lake_area_m2) / 86400]
+      }
       
     } else {
       # Create an empty table if the lake does not have dynamic ET data
@@ -524,7 +546,27 @@ extract_data_by_lake <- function(lake, indir){
     }else{
       lakeObs$et = et$m3_s[match(lakeObs$date, et$date)]
     }
+    
+    # Fill in missing dates with day-of-year ET means
+    missing <- is.na(lakeObs$et)
+    et_subset <- et_supplement[et_supplement$lake_id == lake, ]
+    
+    # Get lake area for conversion (if needed)
+    lake_area_m2 = lakeObs$area_total[1] * 1e6 # convert from km2 to m2
+    
+    # Convert evaporation rate of mm/d to m^3/s (depending on lake depth)
+    if (is.na(lake_depth)|| lake_depth >= 5){
+      et_subset[, m3_s := ((E_mm_d_HS_mean * 0.001) * lake_area_m2) / 86400]
+    } else if (lake_depth < 5){
+      et_subset[, m3_s := ((E_mm_d_noHS_mean * 0.001) * lake_area_m2) / 86400]
+    }	  
+    
+    # Fill in missing observations
+    lakeObs$et[missing] <- et_subset$m3_s[match(paste(lakeObs$month[missing], lakeObs$day[missing]), paste(et_subset$month, et_subset$day))]	
 
+    # Remove month and day fields from lakeObs
+    lakeObs[, c("month", "day") := NULL]
+    
     # add in tributary data:Either use geoglow (ts==TRUE or use GRADES-hydroDL mean monthly vals)
     if(use_ts_tributary==TRUE){
         tributary_locations = tributary[tributary$lake_id==(lake),]
@@ -663,5 +705,5 @@ for(i in 1:nrow(viable_locations)){
 dir.create(file.path(indir, "viable"), showWarnings = FALSE)
 numbers <- gregexpr("[0-9]+", basename(opts$input_file))
 result <- unlist(regmatches(basename(opts$input_file), numbers))
-fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations_test2_", index, ".csv")))
+fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations", index, ".csv")))
 print('Found viable lakes...')
