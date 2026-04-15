@@ -35,16 +35,13 @@ use_python("/usr/local/bin/python3.12")
 #use_virtualenv("r-reticulate")
 
 ################################################################################
-# Constants
-
-SWORD_VERSION = "17"
-
-################################################################################
 # Set args
 option_list <- list(
     make_option(c("-c", "--input_file"), type = "character", default = NULL, help = "filepath to csv with lake ids to download data, point it to reaches_of_interest.json to process lakes associated with those reaches"),
     make_option(c("-w", "--workers"), type = "integer", default = NULL, help = "number of workers to use to download swot data"),
     make_option(c("-i", "--indir"), type = "character", default = NULL , help = "directory with input files"),
+    make_option(c("-s", "--sword_dir"), type = "character", default = NULL, help = "filepath for sword network"),
+    make_option(c("-v", "--swordversion"), type = "character", default = "17", help = "version of sword we are using"),
     make_option(c("-p", "--prefix"), type = "character", default = "", help = "prefix for hydrocron api-key storage"),
     ## I had an index argument, but the script is actually faster in seriel instead of calling hydrocron in parallel
     make_option(c("--index"), type = "integer", default = NULL , help = "Chooses what lake to process from input file, if -256 it uses array number")
@@ -61,6 +58,12 @@ workers_ <- opts$workers
 
 # Path that holds input data, was previously 'in'
 indir <- opts$indir
+
+# Path to SWORD nc files
+sword_dir <- opts$sword_dir
+
+# SWORD product version
+SWORD_VERSION <- opts$swordversion
 
 # Prefix for hydrocron API in the parameter store
 prefix <- opts$prefix
@@ -81,6 +84,10 @@ cat("SLURM_ARRAY_TASK_ID inside R:", Sys.getenv("SLURM_ARRAY_TASK_ID"), "\n")
 updated_pld = fread(file.path(indir,"/SWORDv17b_PLDv201.csv"))
 updated_pld$lake_id =  as.character(updated_pld$lake_id)
 updated_pld$continent = substr(updated_pld$lake_id, 1,1)
+
+# Load ET data
+et = fread(file.path(indir, '/ancillary/et_test.csv'))
+et$lake_id <- as.character(et$lake_id)
 
 # Load supplementary ET dataset
 et_supplement = fread(file.path(indir, '/ancillary/et_supplement.csv'))
@@ -288,7 +295,7 @@ combining_lk_rv_obs = function(lake, api_key){
     reach_continent = strtoi(substring(reach_id, 1, 1))
     continent = paste0(sword_continents[reach_continent], "_sword_v", SWORD_VERSION, ".nc")
     
-    sword_nc = nc_open(file.path(indir, "sword", continent))
+    sword_nc = nc_open(file.path(sword_dir, continent))
     sword = list(reach_id=ncvar_get(sword_nc, "reaches/reach_id"),
                  rch_id_dn=ncvar_get(sword_nc, "reaches/rch_id_dn"),
                  n_rch_dn=ncvar_get(sword_nc, "reaches/n_rch_down"),
@@ -356,7 +363,7 @@ combining_lk_rv_obs = function(lake, api_key){
     reach_continent = strtoi(substring(reach_id, 1, 1))
     continent = paste0(sword_continents[reach_continent], "_sword_v", SWORD_VERSION, ".nc")
     
-    sword_nc = nc_open(file.path(indir, "sword", continent))
+    sword_nc = nc_open(file.path(sword_dir, continent))
     sword = list(reach_id=ncvar_get(sword_nc, "reaches/reach_id"),
                  rch_id_up=ncvar_get(sword_nc, "reaches/rch_id_up"),
                  n_rch_up=ncvar_get(sword_nc, "reaches/n_rch_up"),
@@ -520,31 +527,23 @@ extract_data_by_lake <- function(lake, indir){
     lake_depth <- et_supplement$Depth_avg[et_supplement$lake_id == lake][1]
     
     # Load dynamic ET data
-    if (file.exists(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))) {
-      et = fread(file.path(indir, paste0("/ancillary/et/", lake, ".csv")))
-      et$lake_id = lake
-      et$lake_id = as.character(et$lake_id)
-      
+    et_lake = et[et$lake_id==lake,]
+    
+    if(nrow(et_lake)==0){
+      lakeObs$et = 0
+    }else{
       # Get lake area for conversion
       lake_area_m2 = lakeObs$area_total[1] * 1e6 # convert from km2 to m2
       
       # Convert evaporation rate of mm/d to m^3/s (depending on lake depth)
       if (is.na(lake_depth)|| lake_depth >= 5){
-        et[, m3_s := ((E_mm_d_HS * 0.001) * lake_area_m2) / 86400]
+        et_lake[, m3_s := ((E_mm_d_HS * 0.001) * lake_area_m2) / 86400]
       } else if (lake_depth < 5){
-        et[, m3_s := ((E_mm_d_noHS * 0.001) * lake_area_m2) / 86400]
+        et_lake[, m3_s := ((E_mm_d_noHS * 0.001) * lake_area_m2) / 86400]
       }
       
-    } else {
-      # Create an empty table if the lake does not have dynamic ET data
-      et = data.table()
-    }
-    
-    # Add the ET data to other lake data 
-    if(nrow(et)==0){
-      lakeObs$et = 0
-    }else{
-      lakeObs$et = et$m3_s[match(lakeObs$date, et$date)]
+      # Match by date
+      lakeObs$et = et_lake$m3_s[match(lakeObs$date, et_lake$date)]
     }
     
     # Fill in missing dates with day-of-year ET means
@@ -563,7 +562,7 @@ extract_data_by_lake <- function(lake, indir){
     
     # Fill in missing observations
     lakeObs$et[missing] <- et_subset$m3_s[match(paste(lakeObs$month[missing], lakeObs$day[missing]), paste(et_subset$month, et_subset$day))]	
-
+    
     # Remove month and day fields from lakeObs
     lakeObs[, c("month", "day") := NULL]
     
@@ -705,5 +704,5 @@ for(i in 1:nrow(viable_locations)){
 dir.create(file.path(indir, "viable"), showWarnings = FALSE)
 numbers <- gregexpr("[0-9]+", basename(opts$input_file))
 result <- unlist(regmatches(basename(opts$input_file), numbers))
-fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations", index, ".csv")))
+fwrite(viable_locations[,"lake"], file.path(indir, paste0("viable/viable_locations_test_etdates", index, ".csv")))
 print('Found viable lakes...')

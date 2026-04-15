@@ -36,6 +36,7 @@ option_list <- list(
     make_option(c("-w", "--workers"), type = "integer", default = NULL, help = "number of cores for lakeflow to use"),
     make_option(c("-i", "--indir"), type = "character", default = NULL , help = "directory with input files"),
     make_option(c("-o", "--outdir"), type = "character", default = NULL , help = "directory to output results"),
+    make_option(c("-v", "--swordversion"), type = "character", default = "17", help = "version of sword we are using"),
     make_option(c("--index"), type = "integer", default = NULL, help = "index of what lake to process in the input file if blank process whole file")
   )
 ################################################################################
@@ -63,6 +64,9 @@ sos_dir <- opts$sos_dir
 
 # Path that you write to
 outdir <- opts$outdir
+
+# SWORD product version
+SWORD_VERSION <- opts$swordversion
 
 # Set index, use aws array if index is -256 (ascii code for AWS)
 index <- opts$index
@@ -206,19 +210,19 @@ lakeFlow = function(lake){
         #sos = "sos/constrained/na_sword_v15_SOS_priors.nc"
         #sos_outflow = RNetCDF::open.nc(sos)
         #sos = "in/sos/constrained/na_sword_v15_SOS_priors.nc"
-        if (updated_pld$continent[updated_pld$lake_id==lake] == 1) {
-          sos = file.path(sos_dir, "af_sword_v17_SOS_priors.nc")
-        } else if (updated_pld$continent[updated_pld$lake_id==lake] == 2) {
-          sos = file.path(sos_dir, "eu_sword_v17_SOS_priors.nc")
-        } else if (updated_pld$continent[updated_pld$lake_id==lake] == 3) {
-          sos = file.path(sos_dir, "as_sword_v17_SOS_priors.nc")
-        } else if (updated_pld$continent[updated_pld$lake_id==lake] == 4) {
-          sos = file.path(sos_dir, "as_sword_v17_SOS_priors.nc")
-        } else if (updated_pld$continent[updated_pld$lake_id==lake] == 5) {
-          sos = file.path(sos_dir, "oc_sword_v17_SOS_priors.nc")
-        } else if (updated_pld$continent[updated_pld$lake_id==lake] == 6) {
-          sos = file.path(sos_dir, "sa_sword_v17_SOS_priors.nc")
-        } else {sos = file.path(sos_dir, "na_sword_v17_SOS_priors.nc")} #Sets NA priors for continents 7, 8, and 9
+      if (updated_pld$continent[updated_pld$lake_id==lake] == 1) {
+        sos = file.path(sos_dir,paste0("af_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else if (updated_pld$continent[updated_pld$lake_id==lake] == 2) {
+        sos = file.path(sos_dir,paste0("eu_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else if (updated_pld$continent[updated_pld$lake_id==lake] == 3) {
+        sos = file.path(sos_dir,paste0("as_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else if (updated_pld$continent[updated_pld$lake_id==lake] == 4) {
+        sos = file.path(sos_dir,paste0("as_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else if (updated_pld$continent[updated_pld$lake_id==lake] == 5) {
+        sos = file.path(sos_dir,paste0("oc_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else if (updated_pld$continent[updated_pld$lake_id==lake] == 6) {
+        sos = file.path(sos_dir,paste0("sa_sword_v", SWORD_VERSION, "_SOS_priors.nc"))
+      } else {sos = file.path(sos_dir,paste0("na_sword_v", SWORD_VERSION, "_SOS_priors.nc"))} #Sets NA priors for continents 7, 8, and 9
         sos_outflow = RNetCDF::open.nc(sos)
         reach_grp <- RNetCDF::grp.inq.nc(sos_outflow, "reaches")$self
         reach_ids <- RNetCDF::var.get.nc(reach_grp, "reach_id")

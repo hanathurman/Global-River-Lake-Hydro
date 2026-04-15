@@ -21,4 +21,4 @@ apptainer exec \
     --bind /projects/swot/hana/LakeFlow_Confluence \
     --cleanenv \
     --env SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID \
-    /projects/swot/hana/LakeFlow_Confluence/lakeflow_input.sif Rscript src/lakeflow_1.R -c "in/lakeids/lakeid${SLURM_ARRAY_TASK_ID}.csv" -w 1 -i in/ --index -256
+    /projects/swot/hana/LakeFlow_Confluence/lakeflow_input.sif Rscript src/lakeflow_1.R -c "in/lakeids/lakeid${SLURM_ARRAY_TASK_ID}.csv" -w 1 -i in/ -s in/sword/ -v 17 --index -256

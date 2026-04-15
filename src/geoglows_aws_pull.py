@@ -14,15 +14,17 @@ import datetime
 
 def pull_tributary(reach_id, start_date):
     start_date = datetime.datetime.strptime(start_date, "%m-%d-%Y").date()
-    end_date = datetime.date.today()
     sim_begin = datetime.date(1940, 1, 1)
     first_index = start_date - sim_begin
-    second_index = end_date - sim_begin
     bucket_uri = "s3://geoglows-v2/retrospective/daily.zarr"
     region_name = "us-west-2"
     s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=region_name))
     s3store = s3fs.S3Map(root=bucket_uri, s3=s3, check=False)
     ds = xarray.open_zarr(s3store)
+    
+    end_date = min(datetime.date.today(), pd.Timestamp(ds["time"].values[-1]).date())
+    second_index = end_date - sim_begin
+    
     df = (
         ds["Q"]
         .sel(river_id=reach_id, time=slice(start_date, end_date))
