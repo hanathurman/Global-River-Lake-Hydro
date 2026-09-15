@@ -1,10 +1,3 @@
-#import collections
-#try:
-#    collections.MutableMapping = collections.abc.MutableMapping
-#except AttributeError:
-#    pass
-#import zarr
-
 import numpy as np
 import pandas as pd
 import s3fs
@@ -21,6 +14,9 @@ def pull_tributary(reach_id, start_date):
     s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=region_name))
     s3store = s3fs.S3Map(root=bucket_uri, s3=s3, check=False)
     ds = xarray.open_zarr(s3store)
+    
+    # In case the last value of time coordinate is NaT, drop it
+    ds = ds.isel(time=slice(None, -1)) if pd.isna(ds.time.values[-1]) else ds
     
     end_date = min(datetime.date.today(), pd.Timestamp(ds["time"].values[-1]).date())
     second_index = end_date - sim_begin
