@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=10GB
-#SBATCH --time 12:00:00
+#SBATCH --time 7:00:00
 #SBATCH -p normal_q
 #SBATCH -A swot
 #SBATCH --array=1-30
@@ -20,4 +20,4 @@ apptainer exec \
     --pwd /projects/swot/hana/LakeFlow_Confluence \
     --bind /projects/swot/hana/LakeFlow_Confluence \
     --cleanenv \
-    /projects/swot/hana/LakeFlow_Confluence/lakeflow_deploy.sif Rscript src/lakeflow_2.R -c "in/viable/lakeflow${SLURM_ARRAY_TASK_ID}.csv" -s in/sos/constrained/ -w 6 -i in/ -o out/lf_results_global_run_6_vD_et/ -v 17
+    /projects/swot/hana/LakeFlow_Confluence/lakeflow_deploy.sif Rscript src/lakeflow_2.R -c "in/viable/lakeflow${SLURM_ARRAY_TASK_ID}.csv" -s in/sos/constrained/ -w 6 -i in/ -o out/lf_results_global_run_mean_q_fillin_test_dV_newpriors_monthly/ -v 17c

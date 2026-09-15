@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=5GB
+#SBATCH --mem-per-cpu=10GB
 #SBATCH --time 5:00:00
 #SBATCH -p normal_q
 #SBATCH -A swot
