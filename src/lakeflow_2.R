@@ -143,7 +143,7 @@ lakeFlow = function(lake){
   # lakeObs$storage_dt = (ht_change*area_param)/3
 
   # New code for lake storage change - Hana
-  storage_convert = lakeObs$ds1_q*1e9 #convert from km3 to m3
+  storage_convert = ifelse(lakeObs$ds1_q == -999999999999, NA, lakeObs$ds1_q * 1e9)
   # lakeObs$storage_dt[is.na(lakeObs$storage_dt)] = 0 #filling NA dates to 0 to test for now and see how many there are
 
   # Calculate storage change as difference between current and prior storage value.
@@ -154,7 +154,7 @@ lakeFlow = function(lake){
     storage_val[[k]] = current-prior
   }
   storage_dt = c(NA, unlist(storage_val))
-  lakeObs$storage_dt = storage_dt
+  lakeObs$storage_dt = ifelse(!is.na(storage_dt), storage_dt, lakeObs$storage_dt)
 
   # Remove SWOT storage change field from lakeObs for stan code
   lakeObs[, c("ds1_q") := NULL]
