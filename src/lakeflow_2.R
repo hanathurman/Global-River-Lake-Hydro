@@ -140,7 +140,7 @@ lakeFlow = function(lake){
     area_val[[k]] = area_add+area_sqrt
   }
   area_param = c(NA, unlist(area_val))
-  # lakeObs$storage_dt = (ht_change*area_param)/3
+  lakeObs$storage_dt = (ht_change*area_param)/3
 
   # New code for lake storage change - Hana
   storage_convert = ifelse(lakeObs$ds1_q == -999999999999, NA, lakeObs$ds1_q * 1e9)
